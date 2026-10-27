@@ -1,0 +1,17 @@
+# Python
+backend/.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+# JavaScript
+frontend/node_modules/
+frontend/dist/
+# Local secrets - never commit
+.env
+**/.env
+**/.env.local
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
