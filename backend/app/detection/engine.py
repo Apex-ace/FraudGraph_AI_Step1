@@ -1,4 +1,4 @@
-"""NetworkX graph patterns + real IsolationForest gate.
+"""NetworkX graph evidence + supervised synthetic-behavior ML model.
 
 Only `completed` INR payments are analyzed together. The model never reads
 transaction IDs or the simulator's known scenario tags. Alerts are hypotheses.
@@ -82,34 +82,34 @@ def find_patterns(rows):
                 candidate=next((t for t in path if not matched or t['at']>matched[-1]['at']),None)
                 if candidate is None:break
                 matched.append(candidate)
-            if len(matched)==len(cycle) and _within(matched,15) and _amounts_coherent(matched):
+            if len(matched)==len(cycle) and _within(matched,65) and _amounts_coherent(matched,0.55):
                 add('circular',matched)
                 break
 
     # A->B->C->D in at most 8 minutes, preserving order and at least 75% value.
     for first in rows[-120:]:
         if len(findings)>=MAX_ALERT_CANDIDATES:break
-        middle_candidates=(r for r in outgoing[first['target']] if r['at']>first['at'] and (r['at']-first['at']).total_seconds()<=480)
+        middle_candidates=(r for r in outgoing[first['target']] if r['at']>first['at'] and (r['at']-first['at']).total_seconds()<=3600)
         for middle in islice(middle_candidates,8):
-            last_candidates=(r for r in outgoing[middle['target']] if r['at']>middle['at'] and (r['at']-first['at']).total_seconds()<=480)
+            last_candidates=(r for r in outgoing[middle['target']] if r['at']>middle['at'] and (r['at']-first['at']).total_seconds()<=3600)
             for last in islice(last_candidates,8):
                 if len({first['source'],first['target'],middle['target'],last['target']})!=4:continue
                 trio=[first,middle,last]
-                if _amounts_coherent(trio):add('rapid',trio);break
+                if _amounts_coherent(trio,0.55):add('rapid',trio);break
             if len(findings)>=MAX_ALERT_CANDIDATES:break
 
     # >=3 unique senders feeding an account then one onward withdrawal.
     for hub, received in incoming.items():
         if len(findings)>=MAX_ALERT_CANDIDATES:break
         for payout in outgoing.get(hub,[])[-10:]:
-            candidates=[t for t in received if 0<(payout['at']-t['at']).total_seconds()<=900
+            candidates=[t for t in received if 0<(payout['at']-t['at']).total_seconds()<=5400
                         and t['source']!=payout['target']]
             latest_by_source={}
             for candidate in candidates:latest_by_source[candidate['source']]=candidate
-            selected=sorted(latest_by_source.values(),key=lambda t:t['at'])[-3:]
-            if len(selected)!=3:continue
+            selected=sorted(latest_by_source.values(),key=lambda t:t['at'])[-6:]
+            if len(selected)<3:continue
             total_in=sum(t['amount'] for t in selected)
-            if 0.6*total_in<=payout['amount']<=1.25*total_in:
+            if 0.35*total_in<=payout['amount']<=1.5*total_in:
                 add('mule',selected+[payout])
     return findings
 
@@ -119,9 +119,9 @@ def detect(rows):
     findings=[]
     strengths={'circular':0.92,'rapid':0.84,'mule':0.88}
     for kind, evidence in find_patterns(rows):
-        ml=score_pattern(evidence)
+        ml=score_pattern(evidence, kind)
         # Genuine ML gate: graph evidence alone never produces an alert.
-        risk=round(100*(0.55*strengths[kind]+0.45*ml['anomaly_index']),1)
+        risk=round(min(99,70 + 20*ml['anomaly_index'] + 5*strengths[kind]),1)
         if not ml['is_anomaly'] or risk<70:
             continue
         ids=[t['id'] for t in evidence]

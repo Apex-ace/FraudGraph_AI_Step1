@@ -15,9 +15,9 @@ router=APIRouter(prefix='/api/detection',tags=['ML fraud detection'])
 @router.get('/status')
 def status(user:dict=Depends(current_user)):
     reference_model()  # Ensure the trained model is genuinely ready.
-    return {'model':'IsolationForest','version':MODEL_VERSION,'ready':True,
-            'training_data':'deterministic synthetic normal reference',
-            'limitations':'Demo-only anomaly scoring; not calibrated to real bank fraud'}
+    return {'model':'ExtraTreesClassifier','version':MODEL_VERSION,'ready':True,
+            'training_data':'separate synthetic training and calibration sets',
+            'limitations':'Supervised synthetic pattern screening; not real-world-calibrated fraud probability'}
 
 @router.get('/alerts')
 def alerts(limit:int=Query(60,ge=1,le=100),user:dict=Depends(current_user),db:Session=Depends(get_session)):

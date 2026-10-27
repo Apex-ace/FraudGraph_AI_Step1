@@ -28,10 +28,14 @@ def setup_local(tmp_path, monkeypatch):
 def test_evaluation_is_computed_from_real_predictions():
     result=evaluate_synthetic_scenarios()
     cm=result['confusion_matrix']
-    assert sum(cm.values())==result['cases']==40
+    assert sum(cm.values())==result['cases']==360
     assert cm['tp']>0 and cm['tn']>0
     assert result['precision']==round(cm['tp']/(cm['tp']+cm['fp']),4)
-    assert 'Not a holdout' in result['limitations']
+    assert 'NOT measured on real bank fraud' in result['limitations']
+    assert cm['fp'] > 0 and cm['fn'] > 0
+    assert result['model_version'].startswith('extratrees')
+    assert result['false_positive_rate'] == round(cm['fp']/(cm['fp']+cm['tn']),4)
+    assert len(result['by_scenario']) == 9
 
 def test_case_is_idempotent_and_shows_database_evidence(setup_local):
     owner=UUID(register_user('example@innova.test','the-long-enough-pass')['user']['id'])
