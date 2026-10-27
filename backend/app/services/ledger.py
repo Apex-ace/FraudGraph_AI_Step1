@@ -158,7 +158,7 @@ def import_transactions(db: Session, owner: UUID, filename: str, parsed):
                 raise HTTPException(409, detail=f"Transaction ID {row.transaction_id} already exists with different account(s)")
             if (original.sender_account_id != sender.id or original.receiver_account_id != receiver.id or
                 original.amount != row.amount or original.currency != row.currency or original.status != row.status or
-                original.occurred_at.astimezone(timezone.utc) != row.occurred_at.astimezone(timezone.utc)):
+                (original.occurred_at.replace(tzinfo=timezone.utc) if original.occurred_at.tzinfo is None else original.occurred_at.astimezone(timezone.utc)) != row.occurred_at.astimezone(timezone.utc)):
                 raise HTTPException(409, detail=f"Transaction ID {row.transaction_id} already exists with different data")
     batch = ImportBatch(owner_id=owner, file_name=filename[:160], total_rows=total_rows,
                         imported_rows=len(rows) - len(existing), duplicate_rows=file_duplicates + len(existing))

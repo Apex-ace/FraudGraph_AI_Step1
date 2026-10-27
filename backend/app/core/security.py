@@ -64,8 +64,21 @@ async def current_user(
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     try:
-        return await verify_supabase_token(credentials.credentials)
+        return await verify_access_token(credentials.credentials)
     except InvalidToken as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     except AuthUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+async def verify_access_token(token: str) -> dict[str, Any]:
+    """Select LOCAL or Supabase identity without changing API ownership rules."""
+    if settings.auth_mode.lower() == 'local':
+        from app.core.local_auth import verify_local_token
+        try:
+            return verify_local_token(token)
+        except ValueError as exc:
+            raise InvalidToken(str(exc)) from exc
+    if settings.auth_mode.lower() == 'supabase':
+        return await verify_supabase_token(token)
+    raise AuthUnavailable('AUTH_MODE must be local or supabase')

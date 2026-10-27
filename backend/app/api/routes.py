@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
@@ -15,13 +15,37 @@ router = APIRouter(prefix="/api")
 log = logging.getLogger(__name__)
 
 
+class LocalCredentials(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+
+
+def only_local():
+    if settings.auth_mode.lower() != 'local':
+        raise HTTPException(404, detail='Local authentication is disabled')
+
+
+@router.post('/auth/register', status_code=201)
+def register_local(value: LocalCredentials):
+    only_local()
+    from app.core.local_auth import register_user
+    return register_user(value.email, value.password)
+
+
+@router.post('/auth/login')
+def login_local(value: LocalCredentials):
+    only_local()
+    from app.core.local_auth import login_user
+    return login_user(value.email, value.password)
+
+
 class DemoNotification(BaseModel):
     message: str = "Suspicious circular transfer detected (demo only)"
 
 
 @router.get("/health")
 async def health():
-    return {"status": "ok", "service": "fraudgraph-api", "stage": "step-2"}
+    return {"status": "ok", "service": "fraudgraph-api", "stage": "local-sqlite"}
 
 
 @router.get("/me")
@@ -36,7 +60,7 @@ async def database_health(user: dict = Depends(current_user)):
     except Exception:
         log.exception("Database connectivity check failed")
         raise HTTPException(status_code=503, detail="Database unavailable. Check backend configuration and logs.")
-    return {"status": "connected" if ok else "unavailable", "database": "supabase-postgresql"}
+    return {"status": "connected" if ok else "unavailable", "database": ("sqlite-local" if settings.db_provider.lower() == "sqlite" else "postgresql")}
 
 
 @router.post("/demo/notify")

@@ -9,10 +9,12 @@ from app.api.monitor_routes import router as monitor_router
 from app.api.detection_routes import router as detection_router
 from app.services.simulator import runner
 from app.core.config import settings
+from app.core.database import init_db
 from app.sockets.server import sio
 
 @asynccontextmanager
 async def lifespan(_app):
+    init_db()
     yield
     await runner.close()
 

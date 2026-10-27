@@ -149,7 +149,7 @@ def serialize_alert(a):
             'risk_score':a.risk_score, 'anomaly_index':a.anomaly_index, 'model_version':a.model_version,
             'summary':a.summary, 'status':a.status, 'synthetic':a.synthetic,
             'accounts':a.evidence.get('accounts', []),'transaction_ids':a.evidence.get('transaction_ids', []),
-            'evidence':a.evidence, 'at':a.created_at.isoformat()}
+            'evidence':a.evidence, 'at':(a.created_at if a.created_at.tzinfo else a.created_at.replace(tzinfo=timezone.utc)).isoformat()}
 
 
 def analyze_and_persist(db: Session, owner: UUID):

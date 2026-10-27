@@ -184,13 +184,13 @@ def graph_snapshot(db: Session, owner: UUID, limit: int = 320):
         key = (source, target,pattern or 'standard')
         if key not in edges:
             edges[key] = {'id': f"{source}>{target}:{pattern or 'standard'}",'source':source,'target':target,
-                          'count':0,'amount':0.0,'scenario':pattern,'last_at':t.occurred_at.isoformat(),
+                          'count':0,'amount':0.0,'scenario':pattern,'last_at':(t.occurred_at if t.occurred_at.tzinfo else t.occurred_at.replace(tzinfo=timezone.utc)).isoformat(),
                           'risk_score':alert['risk_score'] if alert else None}
         edges[key]['count'] += 1
         edges[key]['amount'] += amount
         if len(recent) < 14:
             recent.append({'id':t.transaction_id,'source':source,'target':target,'amount':amount,
-                           'status':t.status,'at':t.occurred_at.isoformat(),'scenario':pattern,
+                           'status':t.status,'at':(t.occurred_at if t.occurred_at.tzinfo else t.occurred_at.replace(tzinfo=timezone.utc)).isoformat(),'scenario':pattern,
                            'risk_score':alert['risk_score'] if alert else None})
     events = [{'id':a['id'],'name':a['name'],'at':a['at'],'severity':a['severity'],
                'description':a['summary'],'accounts':a['accounts'],'transaction_ids':a['transaction_ids'],

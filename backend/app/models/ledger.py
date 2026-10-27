@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint, DateTime, ForeignKeyConstraint, Index, Numeric,
     String, UniqueConstraint, Uuid, func,
 )
+from app.models.types import UTCDateTime
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -20,7 +21,7 @@ class Account(Base):
     owner_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     account_code: Mapped[str] = mapped_column(String(40), nullable=False)
     label: Mapped[str | None] = mapped_column(String(100))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
     __table_args__ = (
         UniqueConstraint("owner_id", "account_code", name="uq_accounts_owner_code"),
         UniqueConstraint("owner_id", "id", name="uq_accounts_owner_id"),
@@ -36,7 +37,7 @@ class ImportBatch(Base):
     total_rows: Mapped[int] = mapped_column(nullable=False)
     imported_rows: Mapped[int] = mapped_column(nullable=False)
     duplicate_rows: Mapped[int] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
     __table_args__ = (
         CheckConstraint("total_rows >= 0 AND imported_rows >= 0 AND duplicate_rows >= 0", name="ck_import_counts"),
         UniqueConstraint("owner_id", "id", name="uq_import_batches_owner_id"),
@@ -53,10 +54,10 @@ class Transaction(Base):
     receiver_account_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="completed")
     import_batch_id: Mapped[UUID | None] = mapped_column(Uuid)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
     __table_args__ = (
         UniqueConstraint("owner_id", "transaction_id", name="uq_transactions_owner_ref"),
         CheckConstraint("amount > 0", name="ck_transactions_positive_amount"),

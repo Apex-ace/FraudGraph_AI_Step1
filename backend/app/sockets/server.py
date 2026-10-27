@@ -3,7 +3,7 @@ import logging
 import socketio
 
 from app.core.config import settings
-from app.core.security import AuthUnavailable, InvalidToken, verify_supabase_token
+from app.core.security import AuthUnavailable, InvalidToken, verify_access_token
 
 log = logging.getLogger(__name__)
 
@@ -21,17 +21,17 @@ async def connect(sid, environ, auth):
     if not isinstance(token, str) or not token:
         raise socketio.exceptions.ConnectionRefusedError("Authentication required")
     try:
-        user = await verify_supabase_token(token)
+        user = await verify_access_token(token)
     except InvalidToken as exc:
         # Never log the access token or return token contents to the browser.
         log.warning("Socket.IO authentication rejected: %s", exc)
         raise socketio.exceptions.ConnectionRefusedError(
-            "Invalid or expired Supabase access token. Sign out and sign in again; verify both apps use the same Supabase project."
+            "Invalid or expired access token. Please sign in again."
         ) from exc
     except AuthUnavailable as exc:
-        log.error("Socket.IO cannot verify Supabase authentication: %s", exc)
+        log.error("Socket.IO cannot verify authentication: %s", exc)
         raise socketio.exceptions.ConnectionRefusedError(
-            "Backend Supabase authentication unavailable. Check SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in backend/.env, then restart FastAPI."
+            "Authentication unavailable. Review AUTH_MODE settings and backend logs."
         ) from exc
 
     # Server controls rooms; clients can never join another user's room.

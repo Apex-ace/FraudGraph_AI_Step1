@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, Float, Index, JSON, String, Uuid, UniqueConstraint, func
+from app.models.types import UTCDateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.ledger import Base
@@ -21,6 +22,6 @@ class FraudAlert(Base):
     evidence: Mapped[dict] = mapped_column(JSON, nullable=False)
     synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default='open')
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=lambda: datetime.now(timezone.utc), server_default=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint('owner_id', 'fingerprint', name='uq_fraud_alert_owner_fingerprint'),
                       Index('idx_fraud_alert_owner_created', 'owner_id', 'created_at'))
