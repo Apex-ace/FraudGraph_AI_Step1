@@ -1,4 +1,5 @@
 from typing import Any
+import logging
 
 import httpx
 from fastapi import Depends, HTTPException, status
@@ -6,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import settings
 
+log = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -39,6 +41,9 @@ async def verify_supabase_token(token: str) -> dict[str, Any]:
     except httpx.RequestError as exc:
         raise AuthUnavailable("Supabase Auth cannot be reached") from exc
 
+    if response.status_code != 200:
+        # Do not include response body, credentials, or tokens in logs.
+        log.warning("Supabase Auth GET /auth/v1/user returned HTTP %s", response.status_code)
     if response.status_code in (401, 403):
         raise InvalidToken("Invalid or expired Supabase access token")
     if response.status_code != 200:

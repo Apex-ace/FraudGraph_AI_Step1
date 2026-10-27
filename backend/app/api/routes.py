@@ -21,7 +21,7 @@ class DemoNotification(BaseModel):
 
 @router.get("/health")
 async def health():
-    return {"status": "ok", "service": "fraudgraph-api", "stage": "step-1"}
+    return {"status": "ok", "service": "fraudgraph-api", "stage": "step-2"}
 
 
 @router.get("/me")

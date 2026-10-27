@@ -26,3 +26,10 @@ def get_engine():
 def test_database_connection() -> bool:
     with get_engine().connect() as conn:
         return conn.execute(text("SELECT 1")).scalar_one() == 1
+
+
+def get_session():
+    """Per-request SQLAlchemy session; never expose database credentials to React."""
+    from sqlalchemy.orm import Session
+    with Session(get_engine()) as session:
+        yield session
