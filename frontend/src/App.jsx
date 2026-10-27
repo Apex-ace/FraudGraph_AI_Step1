@@ -4,13 +4,16 @@ import {
   Activity, Bell, CheckCircle2, ChevronRight, CircleHelp, Database, FileSpreadsheet,
   Gauge, GitBranch, LayoutDashboard, LogOut, Maximize2, Minimize2, Network, Pause, Play, Radio,
   RotateCw, Search, Settings2, Shield, ShieldAlert, SquareActivity, Trash2,
-  Upload, Users, Wallet, X
+  Upload, Users, Wallet, X, BrainCircuit, ClipboardCheck, Printer, Focus
 } from 'lucide-react'
 import { API_URL, apiRequest } from './lib/api.js'
 import { isSupabaseConfigured, supabase } from './lib/supabase.js'
 import { clearLocalSession, localAuthenticate, localAuthEnabled, savedLocalSession } from './lib/localAuth.js'
 import FraudNetwork from './components/FraudNetwork.jsx'
 import TransactionWorkspace from './components/TransactionWorkspace.jsx'
+import IntelligencePanel from './components/IntelligencePanel.jsx'
+import EvaluationPanel from './components/EvaluationPanel.jsx'
+import InvestigationReport from './components/InvestigationReport.jsx'
 
 const team = 'Team Innova · TECHVERSE 2.0'
 const money = (x) => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(x || 0)
@@ -18,6 +21,8 @@ const nav = [
   {name:'Overview',icon:LayoutDashboard,group:'MONITORING'},
   {name:'Network Explorer',icon:Network},
   {name:'Fraud Alerts',icon:ShieldAlert},
+  {name:'AI Intelligence',icon:BrainCircuit},
+  {name:'Model Evaluation',icon:ClipboardCheck},
   {name:'Transactions',icon:FileSpreadsheet,group:'DATA MANAGEMENT'},
   {name:'Accounts',icon:Users},
   {name:'CSV Import',icon:Upload},
@@ -44,6 +49,14 @@ export default function App() {
   const [revision,setRevision]=useState(0),[busy,setBusy]=useState(false),[liveEvents,setLiveEvents]=useState([])
   const [graphMode,setGraphMode]=useState('all'),[search,setSearch]=useState('')
   const [graphExpanded,setGraphExpanded]=useState(false)
+  const [focusAlert,setFocusAlert]=useState(null)
+  const [reportAlert,setReportAlert]=useState(null)
+  const [intelligence,setIntelligence]=useState(null)
+  const [intelLoading,setIntelLoading]=useState(false)
+  const [intelError,setIntelError]=useState('')
+  const [evaluation,setEvaluation]=useState(null)
+  const [evalLoading,setEvalLoading]=useState(false)
+  const [evalError,setEvalError]=useState('')
   const graphDialogRef=useRef(null)
   const expandButtonRef=useRef(null)
   const [modelStatus,setModelStatus]=useState(null)
@@ -127,6 +140,22 @@ export default function App() {
     }
   },[graphExpanded])
   useEffect(()=>{if(token){apiRequest('/api/detection/status',token).then(setModelStatus).catch(()=>setModelStatus(null))}},[token])
+  const fetchIntelligence=useCallback(async()=>{
+    if(!token)return
+    setIntelLoading(true);setIntelError('')
+    try { setIntelligence(await apiRequest('/api/intelligence/overview',token)) }
+    catch(error){setIntelError(error.message)} finally{setIntelLoading(false)}
+  },[token])
+  const fetchEvaluation=useCallback(async()=>{
+    if(!token)return
+    setEvalLoading(true);setEvalError('')
+    try {setEvaluation(await apiRequest('/api/intelligence/evaluation',token))}
+    catch(error){setEvalError(error.message)} finally{setEvalLoading(false)}
+  },[token])
+  useEffect(()=>{
+    if(page==='AI Intelligence'&&token){fetchIntelligence();const timer=window.setInterval(fetchIntelligence,10000);return()=>window.clearInterval(timer)}
+  },[page,token,fetchIntelligence])
+  useEffect(()=>{if(page==='Model Evaluation'&&token&&!evaluation)fetchEvaluation()},[page,token,evaluation,fetchEvaluation])
   useEffect(()=>{
     if(!token)return
     const timer=window.setInterval(()=>refresh(),20000)
@@ -175,7 +204,7 @@ export default function App() {
   async function signOut(){
     if(localAuthEnabled){ clearLocalSession();setSession(null) }
     else {const {error}=await supabase.auth.signOut();if(error){setNotice(error.message);return}}
-    setPage('Overview');setGraph(emptyGraph);setOverview(emptyOverview);setAlerts([]);setSelectedAlert(null)
+    setPage('Overview');setGraph(emptyGraph);setOverview(emptyOverview);setAlerts([]);setSelectedAlert(null);setFocusAlert(null);setReportAlert(null);setIntelligence(null);setEvaluation(null)
   }
   async function start(){setBusy(true);setNotice('');try{const s=await apiRequest('/api/simulation/start',token,{method:'POST',body:JSON.stringify({interval_seconds:Number(interval)})});setSim(s);setNotice('Live simulation started. Transactions are being saved to local SQLite.')}
     catch(e){setNotice(e.message)}finally{setBusy(false);setRevision(v=>v+1)}}
@@ -191,6 +220,27 @@ export default function App() {
       setNotice(`Independent model scan finished: ${res.new_alerts} new ML-backed alerts.`)
       setRevision(v=>v+1)
     }catch(e){setNotice(e.message)}finally{setBusy(false)}
+  }
+  function investigate(alert){
+    setSelectedAlert(alert);setFocusAlert(alert);setGraphMode('scenarios');setSearch('');setPage('Network Explorer')
+  }
+  async function guidedDemo(){
+    setBusy(true);setNotice('')
+    try {
+      const result=await apiRequest('/api/intelligence/demo/prepare',token,{method:'POST'})
+      if(result.featured_alert){
+        setSelectedAlert(result.featured_alert)
+        setFocusAlert(result.featured_alert)
+        setGraphMode('scenarios')
+        setSearch('')
+        setPage('Network Explorer')
+        setNotice(`Guided investigation ready: ${result.total_demo_alerts} ML-backed demo alerts. The graph is focused on the highest-risk case.`)
+      } else {
+        setPage('Fraud Alerts')
+        setNotice('Demo transfers inserted, but the model did not confirm a new fraud alert. Review analysis rather than assuming detection.')
+      }
+      setRevision(n=>n+1)
+    }catch(error){setNotice(error.message)} finally{setBusy(false)}
   }
   async function notify(){try{await apiRequest('/api/demo/notify',token,{method:'POST',body:JSON.stringify({message:'Test delivery to your authenticated Socket.IO room (synthetic demo only).'})});setNotice('Sent test notification.')}
     catch(e){setNotice(e.message)}}
@@ -211,12 +261,14 @@ export default function App() {
         <div className="graph-filters">
           <label className="search-field"><Search size={15}/><input placeholder="Find account ID" value={search} onChange={e=>setSearch(e.target.value)} aria-label="Find account ID"/></label>
           <select value={graphMode} onChange={e=>setGraphMode(e.target.value)} aria-label="Graph edge filter"><option value="all">All connections</option><option value="scenarios">ML-flagged paths</option></select>
+          {focusAlert && <button className="button-light" onClick={()=>{setFocusAlert(null);setGraphMode('all')}} title="Remove case path emphasis">Clear case focus</button>}
           <button ref={expandButtonRef} type="button" className="button-light graph-expand-button" aria-label={graphExpanded?'Close expanded transaction chart':'Expand transaction chart'} aria-expanded={graphExpanded} title={graphExpanded?'Close expanded view (Esc)':'Open transaction chart in a larger view'} onClick={()=>setGraphExpanded(value=>!value)}>
             {graphExpanded?<Minimize2 size={16}/>:<Maximize2 size={16}/>}{graphExpanded?'Close expanded view':'Expand chart'}
           </button>
         </div>
       </div>
-      <FraudNetwork graph={graph} mode={graphMode} search={search} expanded={graphExpanded}/>
+      {focusAlert&&<div className="case-focus-strip"><Focus size={15}/><div><strong>Investigating: {focusAlert.name}</strong><small>{focusAlert.accounts.join(' → ')} · Risk {focusAlert.risk_score}/100 · {focusAlert.transaction_ids.length} evidence transfers</small></div><button className="button-light" onClick={()=>setReportAlert(focusAlert)}><Printer size={14}/> Report</button></div>}
+      <FraudNetwork graph={graph} mode={graphMode} search={search} expanded={graphExpanded} focusAlert={focusAlert}/>
       <div className="graph-legend"><span><b style={{background:'#59768b'}}/> Bank</span><span><b style={{background:'#16998a'}}/> Customer</span><span><b style={{background:'#0c88b7'}}/> Wallet</span><span><b style={{background:'#84ad40'}}/> Merchant</span><span><b style={{background:'#d53b42'}}/> ML-flagged path</span><small>Hover for details · Drag to pan · Scroll to zoom · Use +/− controls</small></div>
     </section>
   </>}
@@ -236,7 +288,7 @@ export default function App() {
     </aside>
     <div className="main-column"><header className="app-header"><div className="breadcrumb">Fraud Monitoring <ChevronRight size={14}/> <strong>{page}</strong></div><div className="header-tools"><Status good={health==='online'}>API {health}</Status><Status good={socketStatus==='connected'}>Socket {socketStatus==='connected'?'connected':'offline'}</Status><span className="header-divider"/><span className="operator"><span className="user-dot">{(session.user?.email||'U')[0].toUpperCase()}</span><span>{session.user?.email}</span></span><button className="icon-button" onClick={signOut} title="Sign out of FraudGraph" aria-label="Sign out"><LogOut size={17}/></button></div></header>
       <main className="main-content">
-        <div className="page-heading"><div><span className="eyebrow">FINTECH / DIGITAL TRUST</span><h1>{page}</h1><p>{page==='Overview'?'Live financial transaction monitoring and graph-based exploration.':'Synthetic transaction analysis and operations workspace.'}</p></div><div className="page-heading-side"><span className={`live-marker ${sim.running?'running':''}`}><Radio size={15}/>{sim.running?'Simulation running':'Simulation stopped'}</span>{page!=='Live Simulator'&&<button className="button-light" onClick={()=>setPage('Live Simulator')}><Gauge size={16}/> Open simulator</button>}</div></div>
+        <div className="page-heading"><div><span className="eyebrow">FINTECH / DIGITAL TRUST</span><h1>{page}</h1><p>{page==='Overview'?'Live financial transaction monitoring and graph-based exploration.':'Synthetic transaction analysis and operations workspace.'}</p></div><div className="page-heading-side"><span className={`live-marker ${sim.running?'running':''}`}><Radio size={15}/>{sim.running?'Simulation running':'Simulation stopped'}</span>{page==='Overview'&&<button onClick={guidedDemo} disabled={busy} title="Create one deterministic synthetic case, run the actual ML detector, and open its evidence graph"><Play size={15}/>{busy?'Preparing case…':'Run guided demo'}</button>}{page!=='Live Simulator'&&<button className="button-light" onClick={()=>setPage('Live Simulator')}><Gauge size={16}/> Open simulator</button>}</div></div>
         {notice&&<div className="feedback" role="status">{notice}<button onClick={()=>setNotice('')} aria-label="Close message"><X size={16}/></button></div>}
         {(page==='Overview'||page==='Network Explorer'||page==='Live Simulator')&&<div className="kpi-grid">
           <Kpi title="Transactions" value={overview.transactions.toLocaleString('en-IN')} icon={FileSpreadsheet} note="Persisted ledger records" help="Total transactions saved in your local SQLite ledger, including imported and simulated data."/>
@@ -247,12 +299,15 @@ export default function App() {
         {page==='Overview'&&<><div className="live-strip"><span className={`live-indicator ${sim.running?'on':''}`}/><div><strong>{sim.running?'Live synthetic stream active':'Synthetic stream paused'}</strong><small>{sim.running?`A transaction is saved every ${sim.interval_seconds}s and pushed through Socket.IO.`:'Click Start Simulation to populate the graph and generate live data.'}</small></div>{sim.running?<button className="button-danger" onClick={stop} disabled={busy}><Pause size={15}/> Stop</button>:<button onClick={start} disabled={busy}><Play size={15}/> Start Simulation</button>}</div>
           {networkCard()}<div className="two-cols">{activityCard()}<section className="module"><SectionHeader title="Detected anomalies" description="Actual pattern evidence with trained ML anomaly scores; synthetic-data validation." action={<button className="button-light" onClick={()=>setPage('Fraud Alerts')}>View all</button>}/>{graph.scenarios?.length?graph.scenarios.slice(0,5).map(e=><div className="scenario-row" key={e.id}><span className={`severity ${e.severity}`}>{e.severity}</span><div><strong>{e.name}</strong><small>{e.description} · Risk {e.risk_score}/100 · ML index {e.anomaly_index}</small></div><small>{fmt(e.at)}</small></div>):<p className="empty-message">No ML-backed alerts yet. Run the simulator or analyze imported transactions.</p>}</section></div>
         </>}
-        {page==='Network Explorer'&&networkCard()}
+        {page==='Network Explorer'&&<>{networkCard()}{focusAlert&&<section className="module focus-evidence"><SectionHeader title="Case evidence" description="These are the exact transfers supporting the selected ML-backed alert; graph edges may aggregate multiple records." action={<div className="button-row compact"><button className="button-light" onClick={()=>setPage('Fraud Alerts')}>All alerts</button><button onClick={()=>setReportAlert(focusAlert)}><Printer size={15}/> Print report</button></div>}/><div className="table-scroll"><table className="data-table"><thead><tr><th>Transaction</th><th>Sender</th><th>Receiver</th><th>Amount</th><th>Time</th></tr></thead><tbody>{(focusAlert.evidence?.transfers||[]).map(tx=><tr key={tx.id}><td className="mono">{tx.id}</td><td>{tx.source}</td><td>{tx.target}</td><td>{money(tx.amount)}</td><td>{fmt(tx.at)}</td></tr>)}</tbody></table></div></section>}</>}
+        {page==='AI Intelligence'&&<IntelligencePanel data={intelligence} loading={intelLoading} error={intelError} onRefresh={fetchIntelligence}/>}
+        {page==='Model Evaluation'&&<EvaluationPanel result={evaluation} loading={evalLoading} error={evalError} onRefresh={fetchEvaluation}/>}
         {page==='Live Simulator'&&<><section className="module"><SectionHeader title="Synthetic transaction generator" description="Controlled backend simulator using local SQLite persistence and private Socket.IO events." action={<Status good={sim.running}>{sim.running?'RUNNING':'STOPPED'}</Status>}/><p className="callout">All generated account identifiers and amounts are fictitious. This system does not transfer money or connect to banks. A run automatically stops after {sim.max_ticks} ticks; each account has a 1,200-row safety cap.</p>{simulatorControls()}{sim.error&&<div className="feedback error">Simulator error: {sim.error}</div>}<div className="sim-details"><div><strong>{sim.ticks}</strong><small>Ticks generated in current run</small></div><div><strong>{graph.simulated_count}</strong><small>Rows stored in SQLite</small></div><div><strong>{liveEvents.length}</strong><small>Latest Socket.IO messages shown</small></div></div></section><div className="two-cols">{activityCard()}<section className="module"><SectionHeader title="Live stream diagnostics" description="Verify backend and event delivery."/><div className="status-line"><span>FastAPI</span><Status good={health==='online'}>{health}</Status></div><div className="status-line"><span>Socket.IO authenticated</span><Status good={socketStatus==='connected'}>{socketStatus==='connected'?'Connected':'Disconnected'}</Status></div><div className="status-line"><span>Database</span><span>{dbStatus}</span></div><button className="button-light" onClick={testDb}><Database size={15}/> Test database</button></section></div></>}
-        {page==='Fraud Alerts'&&<section className="module"><SectionHeader title="Fraud investigation alerts" description="Evidence-backed graph patterns independently scored by Isolation Forest." action={<button onClick={analyze} disabled={busy}><ShieldAlert size={15}/> {busy?'Analyzing…':'Analyze transactions'}</button>}/><p className="callout"><ShieldAlert size={16}/> The detection engine uses NetworkX + trained Isolation Forest. Risk scores are uncalibrated demo indices, not probabilities or confirmed fraud. {modelStatus?.version ? `Model: ${modelStatus.version}` : ''}</p><div className="table-scroll"><table className="data-table"><thead><tr><th>Alert</th><th>Pattern</th><th>Accounts</th><th>Risk</th><th>ML index</th><th>Evidence transfers</th><th>Detected</th><th>Details</th></tr></thead><tbody>{alerts.map(e=><tr key={e.id}><td className="mono">{e.id.slice(0,8)}</td><td>{e.name}</td><td className="mono">{e.accounts.join(', ')}</td><td><strong title="A relative demo risk index, not a fraud probability">{e.risk_score}/100</strong></td><td title="Isolation Forest anomaly index; higher means less like the synthetic reference">{e.anomaly_index}</td><td>{e.transaction_ids.length} transactions</td><td>{fmt(e.at)}</td><td><button className="button-light" onClick={()=>setSelectedAlert(e)}>Evidence</button></td></tr>)}{!alerts.length&&<tr><td colSpan="8" className="table-empty">No ML-confirmed alerts. Press Analyze transactions or run a sample simulation.</td></tr>}</tbody></table></div>
-        {selectedAlert&&<div className="evidence-panel"><div className="module-heading"><div><h2>Evidence · {selectedAlert.name}</h2><p>Detection model: {selectedAlert.model_version} · Risk {selectedAlert.risk_score}/100 · ML anomaly index {selectedAlert.anomaly_index}</p></div><button className="button-light" onClick={()=>setSelectedAlert(null)}>Close evidence</button></div><p className="muted">This is a suspicious behavioral pattern, not a confirmed fraud finding. Feature values summarize the linked transfers; they are not model attribution explanations.</p><div className="table-scroll"><table className="data-table"><thead><tr><th>Transaction</th><th>Sender</th><th>Receiver</th><th>Amount</th><th>Timestamp</th></tr></thead><tbody>{(selectedAlert.evidence?.transfers||[]).map(t=><tr key={t.id}><td className="mono">{t.id}</td><td>{t.source}</td><td>{t.target}</td><td>{money(t.amount)}</td><td>{fmt(t.at)}</td></tr>)}</tbody></table></div><div className="evidence-features"><strong>Model input features</strong><div className="feature-grid">{Object.entries(selectedAlert.evidence?.feature_summary||{}).map(([key,value])=><div key={key}><small>{key.replaceAll('_',' ')}</small><strong>{value}</strong></div>)}</div></div></div>}</section>}
+        {page==='Fraud Alerts'&&<section className="module"><SectionHeader title="Fraud investigation alerts" description="Evidence-backed graph patterns independently scored by Isolation Forest." action={<button onClick={analyze} disabled={busy}><ShieldAlert size={15}/> {busy?'Analyzing…':'Analyze transactions'}</button>}/><p className="callout"><ShieldAlert size={16}/> The detection engine uses NetworkX + trained Isolation Forest. Risk scores are uncalibrated demo indices, not probabilities or confirmed fraud. {modelStatus?.version ? `Model: ${modelStatus.version}` : ''}</p><div className="table-scroll"><table className="data-table"><thead><tr><th>Alert</th><th>Pattern</th><th>Accounts</th><th>Risk</th><th>ML index</th><th>Evidence transfers</th><th>Detected</th><th>Details</th></tr></thead><tbody>{alerts.map(e=><tr key={e.id}><td className="mono">{e.id.slice(0,8)}</td><td>{e.name}</td><td className="mono">{e.accounts.join(', ')}</td><td><strong title="A relative demo risk index, not a fraud probability">{e.risk_score}/100</strong></td><td title="Isolation Forest anomaly index; higher means less like the synthetic reference">{e.anomaly_index}</td><td>{e.transaction_ids.length} transactions</td><td>{fmt(e.at)}</td><td><div className="alert-actions"><button className="button-light" onClick={()=>setSelectedAlert(e)}>Evidence</button><button className="button-light" title="Focus this case on the graph" onClick={()=>investigate(e)}><Focus size={14}/> Graph</button></div></td></tr>)}{!alerts.length&&<tr><td colSpan="8" className="table-empty">No ML-confirmed alerts. Press Analyze transactions or run a sample simulation.</td></tr>}</tbody></table></div>
+        {selectedAlert&&<div className="evidence-panel"><div className="module-heading"><div><h2>Evidence · {selectedAlert.name}</h2><p>Detection model: {selectedAlert.model_version} · Risk {selectedAlert.risk_score}/100 · ML anomaly index {selectedAlert.anomaly_index}</p></div><div className="button-row compact"><button onClick={()=>investigate(selectedAlert)}><Focus size={14}/> Focus network</button><button className="button-light" onClick={()=>setReportAlert(selectedAlert)}><Printer size={14}/> Export report</button><button className="button-light" onClick={()=>setSelectedAlert(null)}>Close</button></div></div><p className="muted">This is a suspicious behavioral pattern, not a confirmed fraud finding. Feature values summarize the linked transfers; they are not model attribution explanations.</p><div className="table-scroll"><table className="data-table"><thead><tr><th>Transaction</th><th>Sender</th><th>Receiver</th><th>Amount</th><th>Timestamp</th></tr></thead><tbody>{(selectedAlert.evidence?.transfers||[]).map(t=><tr key={t.id}><td className="mono">{t.id}</td><td>{t.source}</td><td>{t.target}</td><td>{money(t.amount)}</td><td>{fmt(t.at)}</td></tr>)}</tbody></table></div><div className="evidence-features"><strong>Model input features</strong><div className="feature-grid">{Object.entries(selectedAlert.evidence?.feature_summary||{}).map(([key,value])=><div key={key}><small>{key.replaceAll('_',' ')}</small><strong>{value}</strong></div>)}</div></div></div>}</section>}
         {['Transactions','Accounts','CSV Import'].includes(page)&&<div className="module"><TransactionWorkspace token={token} view={{Transactions:'transactions',Accounts:'accounts','CSV Import':'imports'}[page]} onChanged={()=>setRevision(v=>v+1)} refreshKey={revision}/></div>}
         {page==='Connectivity'&&<section className="module"><SectionHeader title="Service connectivity" description="Authentication, database and private real-time channel status."/><div className="status-line"><span>FastAPI backend</span><Status good={health==='online'}>{health}</Status></div><div className="status-line"><span>Socket.IO personal room</span><Status good={socketStatus==='connected'}>{socketStatus}</Status></div><div className="status-line"><span>Local SQLite database</span><span>{dbStatus}</span></div><div className="button-row"><button onClick={testDb}><Database size={15}/> Test database</button><button className="button-light" onClick={notify} disabled={socketStatus!=='connected'}><Bell size={15}/> Test notification</button></div><p className="muted">Authenticated as {session.user?.email}. No database passwords or tokens are displayed. ML status: {modelStatus?.ready ? modelStatus.version : 'not loaded'}.</p></section>}
+      {reportAlert&&<InvestigationReport alert={reportAlert} onClose={()=>setReportAlert(null)}/>}
       <footer>FraudGraph AI · Team Innova · Anvisha Sorte · Chanchal Kohale · Kalpana Channe · Ayush Mishra <span>· Simulation, not live banking data</span></footer>
       </main>
     </div>

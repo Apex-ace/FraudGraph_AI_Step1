@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     supabase_publishable_key: str = ""
     database_url: str = ""               # used only with DB_PROVIDER=postgres
     frontend_origin: str = "http://localhost:5173"
+    lan_frontend_origin: str = ""  # e.g. http://192.168.1.34:5173 (trusted LAN only)
     app_env: str = "development"
 
     model_config = SettingsConfigDict(

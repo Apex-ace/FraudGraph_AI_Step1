@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=[settings.frontend_origin],
+    cors_allowed_origins=[origin for origin in [settings.frontend_origin, settings.lan_frontend_origin] if origin],
     logger=False,
     engineio_logger=False,
 )

@@ -7,6 +7,7 @@ from app.api.routes import router
 from app.api.ledger_routes import router as ledger_router
 from app.api.monitor_routes import router as monitor_router
 from app.api.detection_routes import router as detection_router
+from app.api.intelligence_routes import router as intelligence_router
 from app.services.simulator import runner
 from app.core.config import settings
 from app.core.database import init_db
@@ -22,7 +23,7 @@ async def lifespan(_app):
 api = FastAPI(title="FraudGraph AI API", version="0.3.0", lifespan=lifespan)
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
+    allow_origins=[origin for origin in [settings.frontend_origin, settings.lan_frontend_origin] if origin],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],
@@ -31,6 +32,7 @@ api.include_router(router)
 api.include_router(ledger_router)
 api.include_router(monitor_router)
 api.include_router(detection_router)
+api.include_router(intelligence_router)
 
-# FastAPI routes and Socket.IO share localhost:8000.
+# FastAPI and Socket.IO share port 8000, including on a trusted LAN when explicitly bound.
 app = socketio.ASGIApp(sio, other_asgi_app=api)

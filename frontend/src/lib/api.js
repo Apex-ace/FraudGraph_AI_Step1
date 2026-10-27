@@ -1,4 +1,12 @@
-export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+// A teammate opening http://HOST_LAN_IP:5173 must not call localhost:8000,
+// because localhost would point to their own laptop, not the host machine.
+const requested = import.meta.env.VITE_API_URL || ''
+const host = window.location.hostname
+const remoteDevice = !['localhost','127.0.0.1'].includes(host)
+const isLoopbackTarget = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(requested)
+export const API_URL = (remoteDevice && (!requested || isLoopbackTarget)
+  ? `${window.location.protocol}//${host}:8000`
+  : (requested || 'http://localhost:8000')).replace(/\/$/, '')
 
 export async function apiRequest(path, token, init = {}) {
   const response = await fetch(`${API_URL}${path}`, {

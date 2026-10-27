@@ -13,7 +13,7 @@ const ICONS = {
 const iconImage = (kind) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[kind] || ICONS.account}</svg>`)}`
 const rupee = (x) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(x || 0)
 
-export default function FraudNetwork({ graph, mode = 'all', search = '', expanded = false }) {
+export default function FraudNetwork({ graph, mode = 'all', search = '', expanded = false, focusAlert = null }) {
   const host = useRef(null)
   const cyRef = useRef(null)
   const [tip, setTip] = useState(null)
@@ -48,6 +48,8 @@ export default function FraudNetwork({ graph, mode = 'all', search = '', expande
         { selector: 'edge[scenario = "circular"], edge[scenario = "rapid"], edge[scenario = "mule"]', style: { 'line-color': '#d53b42', 'target-arrow-color': '#d53b42', width: 4.5 } },
         { selector: 'node[flagged > 0]', style: { 'border-color': '#d53b42', 'border-width': 3 } },
         { selector: '.dimmed', style: { opacity: 0.15 } },
+        { selector: '.case-path', style: { opacity: 1, 'line-color': '#df6514', 'target-arrow-color': '#df6514', width: 6, 'z-index': 20 } },
+        { selector: '.case-node', style: { opacity: 1, 'border-color': '#df6514', 'border-width': 5, 'z-index': 21 } },
         { selector: '.focused', style: { 'border-color': '#2563eb', 'border-width': 4, opacity: 1 } },
       ],
       layout: { name: 'preset' },
@@ -129,6 +131,22 @@ export default function FraudNetwork({ graph, mode = 'all', search = '', expande
   }, [graph])
 
   useEffect(() => {
+    const cy=cyRef.current
+    if(!cy)return
+    cy.elements().removeClass('case-path case-node')
+    if(!focusAlert)return
+    const evidence=new Set(focusAlert.transaction_ids || [])
+    const accounts=new Set(focusAlert.accounts || [])
+    const chosenEdges=cy.edges().filter(e => (e.data('transaction_ids') || []).some(id=>evidence.has(id)))
+    const chosenNodes=cy.nodes().filter(node=>accounts.has(node.id()))
+    chosenEdges.addClass('case-path')
+    chosenNodes.addClass('case-node')
+    if(chosenNodes.length){window.requestAnimationFrame(()=>{
+      if(cyRef.current===cy)cy.fit(chosenNodes.union(chosenEdges), expanded?100:65)
+    })}
+  },[focusAlert,graph,expanded])
+
+  useEffect(() => {
     const cy = cyRef.current
     if (!cy) return
     const q = search.trim().toLowerCase()
@@ -146,7 +164,12 @@ export default function FraudNetwork({ graph, mode = 'all', search = '', expande
         else node.addClass('dimmed')
       })
     }
-  }, [mode, search, graph])
+    if(focusAlert){
+      const evidence=new Set(focusAlert.transaction_ids || [])
+      cy.edges().forEach(e=>{if(!(e.data('transaction_ids')||[]).some(id=>evidence.has(id)))e.addClass('dimmed')})
+      cy.nodes().forEach(n=>{if(!(focusAlert.accounts||[]).includes(n.id()))n.addClass('dimmed')})
+    }
+  }, [mode, search, graph, focusAlert])
 
   function zoom(multiplier) { const cy = cyRef.current; if (cy) cy.zoom({ level: Math.min(2.7, Math.max(0.3, cy.zoom() * multiplier)), renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } }) }
   function fit() { cyRef.current?.fit(undefined, 36) }
