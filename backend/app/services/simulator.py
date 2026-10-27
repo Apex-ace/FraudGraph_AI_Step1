@@ -131,7 +131,14 @@ def generate_batch(owner: UUID, tick: int, initialize: bool = False):
 
 
 def reset_simulated_data(owner: UUID):
+    from app.models.alerts import FraudAlert
     with _db_session() as db:
+        # Invalidate any alert containing removed evidence, even if it also
+        # references imported transactions (a mixed synthetic/real CSV chain).
+        existing_alerts = db.scalars(select(FraudAlert).where(FraudAlert.owner_id == owner)).all()
+        for alert in existing_alerts:
+            if any(str(ref).startswith(PREFIX) for ref in alert.evidence.get('transaction_ids', [])):
+                db.delete(alert)
         result = db.execute(delete(Transaction).where(
             Transaction.owner_id == owner,
             Transaction.transaction_id.like("FGSIM\\_%", escape="\\"),
@@ -141,7 +148,8 @@ def reset_simulated_data(owner: UUID):
 
 
 def graph_snapshot(db: Session, owner: UUID, limit: int = 320):
-    """Evidence is all persisted transactions; red edges are known simulator test scenarios only."""
+    """Network edges and alert coloring depend only on ML-confirmed persisted evidence."""
+    from app.detection.engine import list_alerts
     sender_a, receiver_a = aliased(Account), aliased(Account)
     records = db.execute(
         select(Transaction, sender_a.account_code, receiver_a.account_code)
@@ -150,51 +158,48 @@ def graph_snapshot(db: Session, owner: UUID, limit: int = 320):
         .where(Transaction.owner_id == owner)
         .order_by(Transaction.occurred_at.desc(), Transaction.id.desc()).limit(limit)
     ).all()
-    nodes, edges, groups = {}, {}, defaultdict(list)
-    recent = []
+    alerts = [a for a in list_alerts(db, owner, 100) if a['status'] == 'open']
+    flagged = {}
+    for alert in alerts:
+        for tx in alert['evidence'].get('transfers', []):
+            flagged[tx['id']] = alert
+    nodes, edges, recent = {}, {}, []
     for t, source, target in records:
-        scenario = SCENARIO_RE.match(t.transaction_id)
-        scenario_name = {"C": "circular", "R": "rapid", "M": "mule"}.get(scenario.group(1)) if scenario else None
-        if scenario:
-            groups[(scenario.group(1), scenario.group(2))].append((t, source, target, int(scenario.group(3))))
+        alert = flagged.get(t.transaction_id)
+        pattern = alert['pattern_type'] if alert else None
         for code in (source, target):
             if code not in nodes:
                 part = code.split('_')
-                kind = KIND_NAMES.get(part[1][0], 'account') if len(part) > 1 and code.startswith('SYN_') else 'account'
-                nodes[code] = {"id": code, "label": code, "kind": kind, "incoming": 0, "outgoing": 0, "received": 0.0, "sent": 0.0, "synthetic": code.startswith("SYN_")}
+                kind = KIND_NAMES.get(part[1][0], 'account') if len(part)>1 and code.startswith('SYN_') else 'account'
+                nodes[code] = {'id':code,'label':code,'kind':kind,'incoming':0,'outgoing':0,
+                               'received':0.0,'sent':0.0,'flagged':0,'synthetic':code.startswith('SYN_')}
         amount = float(t.amount)
         nodes[source]['outgoing'] += 1
         nodes[source]['sent'] += amount
         nodes[target]['incoming'] += 1
         nodes[target]['received'] += amount
-        key = (source, target, scenario_name or "standard")
+        if alert:
+            nodes[source]['flagged'] = 1
+            nodes[target]['flagged'] = 1
+        key = (source, target,pattern or 'standard')
         if key not in edges:
-            edges[key] = {"id": f"{source}>{target}:{scenario_name or 'standard'}", "source": source, "target": target,
-                          "count": 0, "amount": 0.0, "scenario": scenario_name, "last_at": t.occurred_at.isoformat()}
+            edges[key] = {'id': f"{source}>{target}:{pattern or 'standard'}",'source':source,'target':target,
+                          'count':0,'amount':0.0,'scenario':pattern,'last_at':t.occurred_at.isoformat(),
+                          'risk_score':alert['risk_score'] if alert else None}
         edges[key]['count'] += 1
         edges[key]['amount'] += amount
         if len(recent) < 14:
-            recent.append({"id": t.transaction_id, "source": source, "target": target, "amount": amount,
-                           "status": t.status, "at": t.occurred_at.isoformat(), "scenario": scenario_name})
-    events = []
-    for (code, group), items in groups.items():
-        required = {"C": 3, "R": 3, "M": 4}[code]
-        steps = {entry[3] for entry in items}
-        if not set(range(required)).issubset(steps):
-            continue
-        ordered = sorted(items, key=lambda entry: entry[3])
-        # Only label complete deliberately injected scenarios; this is NOT production fraud analysis.
-        kind = {"C": "Circular transfer", "R": "Rapid movement", "M": "Potential mule pattern"}[code]
-        created = max(entry[0].occurred_at for entry in ordered)
-        events.append({"id": f"{code}{group}", "name": kind, "at": created.isoformat(), "severity": "high" if code == "C" else "medium",
-                       "description": f"Controlled synthetic test pattern · {required} linked transactions",
-                       "accounts": list(dict.fromkeys([entry[1] for entry in ordered] + [entry[2] for entry in ordered])),
-                       "transaction_ids": [entry[0].transaction_id for entry in ordered]})
-    events.sort(key=lambda event: event['at'], reverse=True)
+            recent.append({'id':t.transaction_id,'source':source,'target':target,'amount':amount,
+                           'status':t.status,'at':t.occurred_at.isoformat(),'scenario':pattern,
+                           'risk_score':alert['risk_score'] if alert else None})
+    events = [{'id':a['id'],'name':a['name'],'at':a['at'],'severity':a['severity'],
+               'description':a['summary'],'accounts':a['accounts'],'transaction_ids':a['transaction_ids'],
+               'risk_score':a['risk_score'],'anomaly_index':a['anomaly_index'],'model_version':a['model_version']}
+              for a in alerts[:30]]
     total = db.scalar(select(func.count()).select_from(Transaction).where(Transaction.owner_id == owner)) or 0
-    return {"nodes": list(nodes.values()), "edges": list(edges.values()), "transactions": recent,
-            "scenarios": events[:30], "total_transactions": total, "window_count": len(records),
-            "simulated_count": simulated_count(db, owner), "generated_at": utc_now().isoformat()}
+    return {'nodes':list(nodes.values()),'edges':list(edges.values()),'transactions':recent,
+            'scenarios':events,'total_transactions':total,'window_count':len(records),
+            'simulated_count':simulated_count(db,owner),'generated_at':utc_now().isoformat()}
 
 
 class SimulationRunner:
@@ -230,10 +235,22 @@ class SimulationRunner:
         with _db_session() as db:
             return simulated_count(db, owner)
 
+    @staticmethod
+    def _scan_new_alerts(owner):
+        from app.detection.engine import analyze_and_persist
+        with _db_session() as db:
+            return analyze_and_persist(db, owner)
+
+    async def _publish_alerts(self, owner):
+        fresh = await run_in_threadpool(self._scan_new_alerts, owner)
+        for alert in fresh:
+            await sio.emit('fraud_alert_detected', alert, to=f'user:{owner}')
+
     async def _loop(self, owner, state):
         try:
             first = await run_in_threadpool(generate_batch, owner, 0, True)
             await sio.emit('simulation_transactions', {"transactions": first, "ticks": 0}, to=f"user:{owner}")
+            await self._publish_alerts(owner)
             for n in range(MAX_TICKS):
                 try:
                     await asyncio.wait_for(state['stop'].wait(), timeout=state['interval_seconds'])
@@ -245,6 +262,7 @@ class SimulationRunner:
                 items = await run_in_threadpool(generate_batch, owner, state['offset'] + n, False)
                 state['ticks'] = n + 1
                 await sio.emit('simulation_transactions', {"transactions": items, "ticks": state['ticks']}, to=f"user:{owner}")
+                await self._publish_alerts(owner)
             state['running'] = False
         except asyncio.CancelledError:
             state['running'] = False

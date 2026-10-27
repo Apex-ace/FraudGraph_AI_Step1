@@ -1,4 +1,4 @@
-"""Demo-only synthetic money-flow simulator and graph snapshot endpoints."""
+"""Demo-only synthetic simulator + independently detected ML alerts in graph."""
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session

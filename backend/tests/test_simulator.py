@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.models.ledger import Base, Transaction
+from app.models.alerts import FraudAlert
+from app.detection.engine import analyze_and_persist, list_alerts
 from app.services import simulator
 
 
@@ -37,17 +39,25 @@ def test_synthetic_transactions_are_persisted_and_owner_scoped(fake_db):
         assert b['simulated_count'] == 24
         assert a['total_transactions'] == 34
         assert len(a['nodes']) > 8
-        assert {e['name'] for e in a['scenarios']} == {'Circular transfer', 'Rapid movement', 'Potential mule pattern'}
+        alerts=analyze_and_persist(db,owner_a)
+        assert alerts
+        a=simulator.graph_snapshot(db,owner_a)
+        assert a['scenarios']
+        assert all(e['risk_score'] >= 70 for e in a['scenarios'])
+        assert all(e['anomaly_index'] >= 0.5 for e in a['scenarios'])
 
 
 def test_reset_clears_only_generated_transactions(fake_db):
     owner_a, owner_b = uuid4(), uuid4()
     simulator.generate_batch(owner_a, 0, True)
     simulator.generate_batch(owner_b, 0, True)
+    with Session(fake_db) as db:
+        analyze_and_persist(db,owner_a)
     assert simulator.reset_simulated_data(owner_a) == 24
     with Session(fake_db) as db:
         assert simulator.simulated_count(db, owner_a) == 0
         assert simulator.simulated_count(db, owner_b) == 24
+        assert all(not a['synthetic'] for a in list_alerts(db, owner_a))
 
 
 def test_manual_transaction_cannot_use_reserved_simulation_id():

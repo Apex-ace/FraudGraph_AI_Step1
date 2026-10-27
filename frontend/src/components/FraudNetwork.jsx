@@ -76,7 +76,7 @@ export default function FraudNetwork({ graph, mode = 'all', search = '' }) {
     cy.batch(() => {
       cy.elements().forEach(el => { if (!validIds.has(el.id())) el.remove() })
       nodes.forEach((n, i) => {
-        const data = { ...n, flagged: edges.some(e => e.scenario && (e.source === n.id || e.target === n.id)) ? 1 : 0 }
+        const data = { ...n, flagged: n.flagged ? 1 : 0 }
         const el = cy.getElementById(n.id)
         if (el.length) { el.data(data); return }
         const angle = i * 2.399963229728653
@@ -135,7 +135,7 @@ export default function FraudNetwork({ graph, mode = 'all', search = '' }) {
     {tip && <div className="node-tooltip" style={{ left: Math.max(12, tip.x + 16), top: Math.max(12, tip.y - 20) }}>
       <strong>{tip.type === 'node' ? tip.id : `${tip.source} → ${tip.target}`}</strong>
       {tip.type === 'node' ? <><span>Type: {tip.kind}</span><span>Incoming: {tip.incoming} · Outgoing: {tip.outgoing}</span><span>Received: {rupee(tip.received)}</span><span>Sent: {rupee(tip.sent)}</span></>
-        : <><span>Transfers: {tip.count}</span><span>Value: {rupee(tip.amount)}</span><span>{tip.scenario ? `Synthetic ${tip.scenario} scenario` : 'Standard transaction flow'}</span></>}
+        : <><span>Transfers: {tip.count}</span><span>Value: {rupee(tip.amount)}</span><span>{tip.scenario ? `ML alert: ${tip.scenario} · risk ${tip.risk_score}/100` : 'No ML alert attached'}</span></>}
     </div>}
     {selected && <div className="network-selection"><button className="selection-close" onClick={() => setSelected(null)} aria-label="Close account details">×</button><strong>{selected.type === 'node' ? selected.id : `${selected.source} → ${selected.target}`}</strong><p>{selected.type === 'node' ? `Account type: ${selected.kind} · Incoming ${selected.incoming} · Outgoing ${selected.outgoing}` : `${selected.count} transactions · ${rupee(selected.amount)}`}</p><small>Sample data · Derived from stored transactions</small></div>}
   </div>
