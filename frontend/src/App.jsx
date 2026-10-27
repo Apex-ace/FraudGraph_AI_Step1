@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import {
   Activity, Bell, CheckCircle2, ChevronRight, CircleHelp, Database, FileSpreadsheet,
-  Gauge, GitBranch, LayoutDashboard, LogOut, Network, Pause, Play, Radio,
+  Gauge, GitBranch, LayoutDashboard, LogOut, Maximize2, Minimize2, Network, Pause, Play, Radio,
   RotateCw, Search, Settings2, Shield, ShieldAlert, SquareActivity, Trash2,
   Upload, Users, Wallet, X
 } from 'lucide-react'
@@ -43,6 +43,9 @@ export default function App() {
   const [sim,setSim]=useState({running:false,ticks:0,max_ticks:120,interval_seconds:3,error:null}),[interval,setIntervalSeconds]=useState(3)
   const [revision,setRevision]=useState(0),[busy,setBusy]=useState(false),[liveEvents,setLiveEvents]=useState([])
   const [graphMode,setGraphMode]=useState('all'),[search,setSearch]=useState('')
+  const [graphExpanded,setGraphExpanded]=useState(false)
+  const graphDialogRef=useRef(null)
+  const expandButtonRef=useRef(null)
   const [modelStatus,setModelStatus]=useState(null)
   const token = session?.access_token
   const queuedRefresh = useRef(null)
@@ -89,6 +92,40 @@ export default function App() {
     } catch(e){setNotice(e.message)}
   },[token])
   useEffect(()=>{refresh()},[refresh,revision])
+  // Enlarges the *same* Cytoscape chart; data, zoom controls and live Socket.IO updates remain active.
+  // Lock background scrolling and trap keyboard focus while the enlarged chart is open.
+  useEffect(()=>{
+    if(!graphExpanded)return
+    const previousFocus=document.activeElement
+    const previousOverflow=document.body.style.overflow
+    document.body.style.overflow='hidden'
+    expandButtonRef.current?.focus()
+    const handleKeydown=(event)=>{
+      if(event.key==='Escape'){
+        event.preventDefault()
+        setGraphExpanded(false)
+        return
+      }
+      if(event.key!=='Tab')return
+      const panel=graphDialogRef.current
+      if(!panel)return
+      const focusables=[...panel.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])')]
+        .filter(element=>element.getClientRects().length>0)
+      if(!focusables.length)return
+      const first=focusables[0],last=focusables[focusables.length-1]
+      if(event.shiftKey && (document.activeElement===first || !panel.contains(document.activeElement))){
+        event.preventDefault();last.focus()
+      }else if(!event.shiftKey && (document.activeElement===last || !panel.contains(document.activeElement))){
+        event.preventDefault();first.focus()
+      }
+    }
+    document.addEventListener('keydown',handleKeydown)
+    return()=>{
+      document.removeEventListener('keydown',handleKeydown)
+      document.body.style.overflow=previousOverflow
+      if(previousFocus?.isConnected)previousFocus.focus()
+    }
+  },[graphExpanded])
   useEffect(()=>{if(token){apiRequest('/api/detection/status',token).then(setModelStatus).catch(()=>setModelStatus(null))}},[token])
   useEffect(()=>{
     if(!token)return
@@ -162,10 +199,28 @@ export default function App() {
     {sim.running?<button className="button-danger" onClick={stop} disabled={busy}><Pause size={16}/> Stop Simulation</button>:<button onClick={start} disabled={busy}><Play size={16}/> Start Simulation</button>}
     <button className="button-light" onClick={reset} disabled={sim.running||busy} title="Delete generated FGSIM_ transactions, never imported CSV data"><Trash2 size={15}/> Reset Demo Data</button>
   </div>}
-  function networkCard(){return <section className="module network-module"><div className="module-heading graph-heading"><div><h2>Transaction network <Hint text="Nodes represent accounts. Red connections are linked to actual ML-backed anomaly alerts, not predefined simulator labels. Alerts do not establish fraud."/></h2><p>Account relationships derived from the latest {graph.window_count} stored transactions.</p></div><div className="graph-filters"><label className="search-field"><Search size={15}/><input placeholder="Find account ID" value={search} onChange={e=>setSearch(e.target.value)} aria-label="Find account ID"/></label><select value={graphMode} onChange={e=>setGraphMode(e.target.value)} aria-label="Graph edge filter"><option value="all">All connections</option><option value="scenarios">ML-flagged paths</option></select></div></div>
-    <FraudNetwork graph={graph} mode={graphMode} search={search}/>
-    <div className="graph-legend"><span><b style={{background:'#59768b'}}/> Bank</span><span><b style={{background:'#16998a'}}/> Customer</span><span><b style={{background:'#0c88b7'}}/> Wallet</span><span><b style={{background:'#84ad40'}}/> Merchant</span><span><b style={{background:'#d53b42'}}/> ML-flagged path</span><small>Hover nodes or edges for details · Drag to pan · Scroll to zoom</small></div>
-  </section>}
+  function networkCard(){return <>
+    {graphExpanded&&<div className="graph-expand-backdrop" onClick={()=>setGraphExpanded(false)} aria-hidden="true"/>}
+    <section ref={graphDialogRef}
+      className={`module network-module${graphExpanded?' graph-expanded':''}`}
+      role={graphExpanded?'dialog':undefined}
+      aria-modal={graphExpanded?'true':undefined}
+      aria-labelledby="transaction-network-heading">
+      <div className="module-heading graph-heading">
+        <div><h2 id="transaction-network-heading">Transaction network {graphExpanded&&<span className="graph-expanded-label">— Expanded view</span>} <Hint text="Nodes represent accounts. Red connections are linked to actual ML-backed anomaly alerts, not predefined simulator labels. Alerts do not establish fraud."/></h2><p>Account relationships derived from the latest {graph.window_count} stored transactions.{graphExpanded?' Press Esc to close the expanded view.':''}</p></div>
+        <div className="graph-filters">
+          <label className="search-field"><Search size={15}/><input placeholder="Find account ID" value={search} onChange={e=>setSearch(e.target.value)} aria-label="Find account ID"/></label>
+          <select value={graphMode} onChange={e=>setGraphMode(e.target.value)} aria-label="Graph edge filter"><option value="all">All connections</option><option value="scenarios">ML-flagged paths</option></select>
+          <button ref={expandButtonRef} type="button" className="button-light graph-expand-button" aria-label={graphExpanded?'Close expanded transaction chart':'Expand transaction chart'} aria-expanded={graphExpanded} title={graphExpanded?'Close expanded view (Esc)':'Open transaction chart in a larger view'} onClick={()=>setGraphExpanded(value=>!value)}>
+            {graphExpanded?<Minimize2 size={16}/>:<Maximize2 size={16}/>}{graphExpanded?'Close expanded view':'Expand chart'}
+          </button>
+        </div>
+      </div>
+      <FraudNetwork graph={graph} mode={graphMode} search={search} expanded={graphExpanded}/>
+      <div className="graph-legend"><span><b style={{background:'#59768b'}}/> Bank</span><span><b style={{background:'#16998a'}}/> Customer</span><span><b style={{background:'#0c88b7'}}/> Wallet</span><span><b style={{background:'#84ad40'}}/> Merchant</span><span><b style={{background:'#d53b42'}}/> ML-flagged path</span><small>Hover for details · Drag to pan · Scroll to zoom · Use +/− controls</small></div>
+    </section>
+  </>}
+
   function activityCard(){return <section className="module activity-panel"><div className="module-heading"><div><h2>Recent transaction activity</h2><p>Newest ledger entries, not placeholder animations.</p></div><button className="icon-button" title="Refresh latest transactions" onClick={()=>setRevision(v=>v+1)}><RotateCw size={16}/></button></div>
     <div className="activity-list">{(graph.transactions||[]).slice(0,9).map(t=><div className="activity-item" key={t.id}><span className={`activity-mark ${t.scenario?'red':''}`}><GitBranch size={14}/></span><div><strong>{t.source} <ChevronRight size={12}/> {t.target}</strong><small>{fmt(t.at)} · {t.scenario?`ML-detected ${t.scenario} pattern`:'Standard flow'}</small></div><b>{money(t.amount)}</b></div>)}{!graph.transactions?.length&&<p className="empty-message">No activity yet. Start the simulator to create data.</p>}</div>
   </section>}

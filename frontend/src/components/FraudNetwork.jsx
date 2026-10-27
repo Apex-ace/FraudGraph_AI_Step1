@@ -13,7 +13,7 @@ const ICONS = {
 const iconImage = (kind) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[kind] || ICONS.account}</svg>`)}`
 const rupee = (x) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(x || 0)
 
-export default function FraudNetwork({ graph, mode = 'all', search = '' }) {
+export default function FraudNetwork({ graph, mode = 'all', search = '', expanded = false }) {
   const host = useRef(null)
   const cyRef = useRef(null)
   const [tip, setTip] = useState(null)
@@ -67,6 +67,35 @@ export default function FraudNetwork({ graph, mode = 'all', search = '' }) {
     cy.on('tap', event => { if (event.target === cy) setSelected(null) })
     return () => { cy.destroy(); cyRef.current = null }
   }, [])
+
+  // Cytoscape does not always detect changes to its parent element's size.
+  // Keep this one instance alive when its surrounding card becomes a fullscreen dialog.
+  useEffect(() => {
+    const cy = cyRef.current
+    const container = host.current
+    if (!cy || !container) return
+    let rafId = null
+    const resize = () => {
+      window.cancelAnimationFrame(rafId)
+      rafId = window.requestAnimationFrame(() => cy.resize())
+    }
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null
+    observer?.observe(container)
+    resize()
+    return () => { observer?.disconnect(); window.cancelAnimationFrame(rafId) }
+  }, [])
+
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy) return
+    setTip(null)
+    const rafId = window.requestAnimationFrame(() => {
+      cy.resize()
+      // Reframe the graph for the new canvas dimensions without regenerating nodes.
+      if (cy.nodes().length) cy.fit(undefined, expanded ? 56 : 36)
+    })
+    return () => window.cancelAnimationFrame(rafId)
+  }, [expanded])
 
   useEffect(() => {
     const cy = cyRef.current
